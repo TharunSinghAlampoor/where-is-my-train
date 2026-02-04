@@ -1,0 +1,2331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indian Railway Tracker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            background: #0d1117; 
+            color: white; 
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        /* Animations */
+        @keyframes pulse {
+            0% { transform: translateX(-50%) scale(1); box-shadow: 0 0 0 0 rgba(0, 255, 153, 0.7); }
+            70% { transform: translateX(-50%) scale(1.6); box-shadow: 0 0 0 12px rgba(0, 255, 153, 0); }
+            100% { transform: translateX(-50%) scale(1); box-shadow: 0 0 0 0 rgba(0, 255, 153, 0); }
+        }
+        
+        @keyframes trainMove {
+            0% { transform: translateX(-50%) translateY(0px); }
+            25% { transform: translateX(-50%) translateY(-2px); }
+            50% { transform: translateX(-50%) translateY(-3px); }
+            75% { transform: translateX(-50%) translateY(-2px); }
+            100% { transform: translateX(-50%) translateY(0px); }
+        }
+        
+        @keyframes progressPulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        
+        .station-pulse { 
+            animation: pulse 1.5s infinite ease-in-out; 
+        }
+        .train-moving { 
+            animation: trainMove 0.8s infinite ease-in-out; 
+        }
+        .progress-pulse { 
+            animation: progressPulse 1s infinite; 
+        }
+        
+        /* Audio Controls */
+        .audio-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 40, 0, 0.8);
+            border: 1px solid #00cc66;
+            border-radius: 10px;
+            padding: 10px 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+        
+        .volume-slider {
+            width: 80px;
+            accent-color: #00cc66;
+        }
+        
+        .sound-toggle {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 5px;
+            padding: 5px 10px;
+            color: #8b949e;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        .sound-toggle.active {
+            background: #00cc66;
+            color: #000;
+            border-color: #00cc66;
+        }
+        
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #161b22;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00cc66;
+        }
+        
+        /* Auto-scroll indicator */
+        .auto-scroll-indicator {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: rgba(0, 255, 153, 0.2);
+            border: 1px solid #00ff99;
+            border-radius: 20px;
+            padding: 8px 15px;
+            font-size: 12px;
+            color: #00ff99;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(5px);
+            animation: fadeInOut 3s infinite;
+        }
+        
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script>
+        const TRAINS = {
+            "12627": {
+                name: "12627 - Karnataka Express",
+                type: "Superfast Express",
+                maxSpeed: 110,
+                duration: "6h 5m",
+                coachTypes: ["AC First", "AC 2-Tier", "AC 3-Tier", "Sleeper", "General"],
+                rake: "LHB Coach",
+                frequency: "Daily",
+                runningDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                facilities: ["Pantry Car", "Bedroll", "Food", "Bio-toilet"],
+                zone: "South Western Railway (SWR)",
+                averageDelay: "15 minutes",
+                route: [
+                    { station: "BANGALORE CITY (SBC)", dist: "0 km", arr: "Start", arrActual: "--", dep: "7:20 PM", depActual: "7:25 PM", platform: "5", halt: "5 min" },
+                    { station: "HINDUPUR (HUP)", dist: "100 km", arr: "8:50 PM", arrActual: "9:05 PM", dep: "8:52 PM", depActual: "9:10 PM", platform: "2", halt: "2 min" },
+                    { station: "DHARMAVARAM (DMM)", dist: "180 km", arr: "10:30 PM", arrActual: "10:45 PM", dep: "10:35 PM", depActual: "10:50 PM", platform: "1", halt: "5 min" },
+                    { station: "ANANTAPUR (ATP)", dist: "213 km", arr: "11:10 PM", arrActual: "11:30 PM", dep: "11:12 PM", depActual: "11:35 PM", platform: "2", halt: "2 min" },
+                    { station: "GOOTY (GY)", dist: "265 km", arr: "12:25 AM", arrActual: "12:40 AM", dep: "12:27 AM", depActual: "12:42 AM", platform: "3", halt: "2 min" },
+                    { station: "GUNTAKAL (GTL)", dist: "290 km", arr: "1:05 AM", arrActual: "1:20 AM", dep: "1:10 AM", depActual: "1:25 AM", platform: "4", halt: "5 min" }
+                ]
+            },
+            "12649": {
+                name: "12649 - Bangalore - Ernakulam Express",
+                type: "Superfast Express",
+                maxSpeed: 110,
+                duration: "10h 30m",
+                coachTypes: ["AC 2-Tier", "AC 3-Tier", "Sleeper", "General"],
+                rake: "LHB Coach",
+                frequency: "Daily",
+                runningDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                facilities: ["Pantry Car", "Food", "Bio-toilet"],
+                zone: "Southern Railway (SR)",
+                averageDelay: "20 minutes",
+                route: [
+                    { station: "BANGALORE CY JN (SBC)", dist: "0 km", arr: "Start", arrActual: "--", dep: "10:15 PM", depActual: "10:20 PM", platform: "7", halt: "5 min" },
+                    { station: "BANGALORE CANT (BNC)", dist: "5 km", arr: "10:30 PM", arrActual: "10:35 PM", dep: "10:32 PM", depActual: "10:37 PM", platform: "3", halt: "2 min" },
+                    { station: "KRISHNARAJAPURM (KJM)", dist: "20 km", arr: "10:50 PM", arrActual: "10:55 PM", dep: "10:52 PM", depActual: "10:57 PM", platform: "2", halt: "2 min" },
+                    { station: "SALEM JN (SA)", dist: "210 km", arr: "2:15 AM", arrActual: "2:20 AM", dep: "2:20 AM", depActual: "2:25 AM", platform: "4", halt: "5 min" },
+                    { station: "ERODE JN (ED)", dist: "285 km", arr: "3:40 AM", arrActual: "3:45 AM", dep: "3:45 AM", depActual: "3:50 AM", platform: "2", halt: "5 min" },
+                    { station: "ERNAKULAM JN (ERS)", dist: "590 km", arr: "8:45 AM", arrActual: "8:50 AM", dep: "End", depActual: "--", platform: "1", halt: "--" }
+                ]
+            },
+            "57401": {
+                name: "57401 - Tirupati - Hubbali Intercity Passenger",
+                type: "Tirupati - Hubbali Intercity",
+                maxSpeed: 80,
+                duration: "15h 0m",
+                coachTypes: ["General", "Sleeper"],
+                rake: "LHB Coach",
+                frequency: "Daily",
+                runningDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                facilities: ["Food"],
+                zone: "Northern Railway (WR)",
+                averageDelay: "80 minutes",
+                route: [
+                    { station: "TIRUPATI (TPTY)", dist: "0 km", arr: "Start", arrActual: "--", dep: "8:00 AM", depActual: "8:05 AM", platform: "1", halt: "5 min" },
+                    { station: "RAJAMPETA (RJPT)", dist: "42 km", arr: "8:42 AM", arrActual: "8:45 AM", dep: "8:43 AM", depActual: "8:47 AM", platform: "2", halt: "2 min" },
+                    { station: "CUDDAPAH JN (CUD)", dist: "86 km", arr: "9:25 AM", arrActual: "9:28 AM", dep: "9:26 AM", depActual: "9:30 AM", platform: "1", halt: "2 min" },
+                    { station: "GOOTY JN (GTY)", dist: "210 km", arr: "12:10 PM", arrActual: "12:15 PM", dep: "12:11 PM", depActual: "12:16 PM", platform: "3", halt: "1 min" },
+                    { station: "GUNTAKAL JN (GTKL)", dist: "250 km", arr: "2:45 PM", arrActual: "2:50 PM", dep: "2:46 PM", depActual: "2:51 PM", platform: "5", halt: "1 min" },
+                    { station: "BALLARI (BLY)", dist: "320 km", arr: "3:40 PM", arrActual: "3:49 PM", dep: "3:55 PM", depActual: "4:00 PM", platform: "1", halt: "15 min" },
+                    { station: "TORANAGALLU JN (TRN)", dist: "380 km", arr: "4:45 PM", arrActual: "4:50 PM", dep: "5:00 PM", depActual: "5:51 PM", platform: "5", halt: "11 min" },
+                    { station: "GADAG JN (GDG)", dist: "450 km", arr: "6:45 PM", arrActual: "6:50 PM", dep: "7:00 PM", depActual: "7:15 PM", platform: "5", halt: "15 min" },
+                    { station: "KOPPAL (KPL)", dist: "500 km", arr: "7:45 PM", arrActual: "7:50 PM", dep: "7:55 PM", depActual: "7:58 PM", platform: "5", halt: "3 min" },
+                    { station: "HUBBALI JN (UBL)", dist: "580 km", arr: "9:05 PM", arrActual: "9:20 PM", dep: "End", depActual: "--", platform: "5", halt: "--" }
+                ]
+            },
+            "12613": {
+                name: "12613 - Bangalore - Hazrat Nizamuddin Rajdhani",
+                type: "Rajdhani Express",
+                maxSpeed: 130,
+                duration: "32h 0m",
+                coachTypes: ["AC First", "AC 2-Tier", "AC 3-Tier"],
+                rake: "LHB Coach",
+                frequency: "Weekly (Tue)",
+                runningDays: ["Tue"],
+                facilities: ["Pantry Car", "Bedroll", "Food", "Bio-toilet", "WiFi"],
+                zone: "South Western Railway (SWR)",
+                averageDelay: "10 minutes",
+                route: [
+                    { station: "BANGALORE CY JN (SBC)", dist: "0 km", arr: "Start", arrActual: "--", dep: "8:00 PM", depActual: "8:05 PM", platform: "1", halt: "5 min" },
+                    { station: "DHARMAVARAM JN (DMM)", dist: "180 km", arr: "11:30 PM", arrActual: "11:35 PM", dep: "11:35 PM", depActual: "11:40 PM", platform: "2", halt: "5 min" },
+                    { station: "GOOTY JN (GY)", dist: "265 km", arr: "1:15 AM", arrActual: "1:20 AM", dep: "1:20 AM", depActual: "1:25 AM", platform: "3", halt: "5 min" },
+                    { station: "SECUNDERABAD JN (SC)", dist: "715 km", arr: "9:45 AM", arrActual: "9:50 AM", dep: "9:55 AM", depActual: "10:00 AM", platform: "5", halt: "10 min" },
+                    { station: "NAGPUR (NGP)", dist: "1470 km", arr: "1:40 AM", arrActual: "1:45 AM", dep: "1:50 AM", depActual: "1:55 AM", platform: "3", halt: "10 min" },
+                    { station: "HAZRAT NIZAMUDDIN (NZM)", dist: "2360 km", arr: "4:00 AM", arrActual: "4:05 AM", dep: "End", depActual: "--", platform: "2", halt: "--" }
+                ]
+            },
+            "16591": {
+                name: "16591 - Bangalore - Karwar Express",
+                type: "Mail/Express",
+                maxSpeed: 90,
+                duration: "15h 20m",
+                coachTypes: ["AC 2-Tier", "AC 3-Tier", "Sleeper", "General"],
+                rake: "ICF Coach",
+                frequency: "Daily",
+                runningDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                facilities: ["Pantry Car", "Food"],
+                zone: "South Western Railway (SWR)",
+                averageDelay: "30 minutes",
+                route: [
+                    { station: "BANGALORE CY JN (SBC)", dist: "0 km", arr: "Start", arrActual: "--", dep: "7:20 PM", depActual: "7:25 PM", platform: "6", halt: "5 min" },
+                    { station: "HASSAN (HAS)", dist: "185 km", arr: "11:00 PM", arrActual: "11:05 PM", dep: "11:05 PM", depActual: "11:10 PM", platform: "2", halt: "5 min" },
+                    { station: "MANGALURU JN (MAJN)", dist: "355 km", arr: "5:30 AM", arrActual: "5:35 AM", dep: "5:40 AM", depActual: "5:45 AM", platform: "1", halt: "10 min" },
+                    { station: "UDUPI (UD)", dist: "435 km", arr: "8:00 AM", arrActual: "8:05 AM", dep: "8:05 AM", depActual: "8:10 AM", platform: "2", halt: "5 min" },
+                    { station: "KARWAR (KAWR)", dist: "615 km", arr: "12:40 PM", arrActual: "12:45 PM", dep: "End", depActual: "--", platform: "1", halt: "--" }
+                ]
+            },
+            "12509": {
+                name: "12509 - Guwahati - Bangalore Express",
+                type: "Superfast Express",
+                maxSpeed: 110,
+                duration: "48h 30m",
+                coachTypes: ["AC 2-Tier", "AC 3-Tier", "Sleeper", "General"],
+                rake: "LHB Coach",
+                frequency: "Weekly (Wed)",
+                runningDays: ["Wed"],
+                facilities: ["Pantry Car", "Bedroll", "Food", "Bio-toilet"],
+                zone: "Northeast Frontier Railway (NFR)",
+                averageDelay: "45 minutes",
+                route: [
+                    { station: "GUWAHATI (GHY)", dist: "0 km", arr: "Start", arrActual: "--", dep: "6:00 AM", depActual: "6:05 AM", platform: "3", halt: "5 min" },
+                    { station: "NEW JALPAIGURI (NJP)", dist: "410 km", arr: "4:00 PM", arrActual: "4:05 PM", dep: "4:10 PM", depActual: "4:15 PM", platform: "2", halt: "10 min" },
+                    { station: "HOWRAH JN (HWH)", dist: "1420 km", arr: "11:00 AM", arrActual: "11:05 AM", dep: "11:10 AM", depActual: "11:15 AM", platform: "15", halt: "10 min" },
+                    { station: "VISAKHAPATNAM (VSKP)", dist: "2250 km", arr: "11:00 PM", arrActual: "11:05 PM", dep: "11:10 PM", depActual: "11:15 PM", platform: "5", halt: "10 min" },
+                    { station: "BANGALORE CY JN (SBC)", dist: "3250 km", arr: "6:30 AM", arrActual: "6:35 AM", dep: "End", depActual: "--", platform: "8", halt: "--" }
+                ]
+            },
+            "12629": {
+                name: "12629 - Mumbai - Bangalore Express",
+                type: "Superfast Express",
+                maxSpeed: 110,
+                duration: "23h 15m",
+                coachTypes: ["AC 2-Tier", "AC 3-Tier", "Sleeper"],
+                rake: "LHB Coach",
+                frequency: "Daily",
+                runningDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                facilities: ["Pantry Car", "Bedroll", "Food"],
+                zone: "Central Railway (CR)",
+                averageDelay: "25 minutes",
+                route: [
+                    { station: "MUMBAI CST (CSTM)", dist: "0 km", arr: "Start", arrActual: "--", dep: "10:00 PM", depActual: "10:05 PM", platform: "12", halt: "5 min" },
+                    { station: "PUNE JN (PUNE)", dist: "192 km", arr: "2:15 AM", arrActual: "2:20 AM", dep: "2:20 AM", depActual: "2:25 AM", platform: "5", halt: "5 min" },
+                    { station: "HUBBALLI JN (UBL)", dist: "865 km", arr: "1:45 PM", arrActual: "1:50 PM", dep: "1:55 PM", depActual: "2:00 PM", platform: "3", halt: "10 min" },
+                    { station: "YESVANTPUR JN (YPR)", dist: "1135 km", arr: "7:45 PM", arrActual: "7:50 PM", dep: "End", depActual: "--", platform: "6", halt: "--" }
+                ]
+            },
+            "12619": {
+                name: "12619 - Chennai - Mysuru Shatabdi",
+                type: "Shatabdi Express",
+                maxSpeed: 130,
+                duration: "6h 30m",
+                coachTypes: ["AC Chair Car", "Executive Chair Car"],
+                rake: "LHB Coach",
+                frequency: "Daily",
+                runningDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                facilities: ["Pantry Car", "Food", "Newspaper", "WiFi"],
+                zone: "Southern Railway (SR)",
+                averageDelay: "5 minutes",
+                route: [
+                    { station: "CHENNAI CENTRAL (MAS)", dist: "0 km", arr: "Start", arrActual: "--", dep: "6:00 AM", depActual: "6:05 AM", platform: "4", halt: "5 min" },
+                    { station: "KATPADI JN (KPD)", dist: "130 km", arr: "7:30 AM", arrActual: "7:35 AM", dep: "7:32 AM", depActual: "7:37 AM", platform: "2", halt: "2 min" },
+                    { station: "BANGALORE CY JN (SBC)", dist: "360 km", arr: "10:15 AM", arrActual: "10:20 AM", dep: "10:20 AM", depActual: "10:25 AM", platform: "6", halt: "5 min" },
+                    { station: "MYSURU JN (MYS)", dist: "495 km", arr: "12:30 PM", arrActual: "12:35 PM", dep: "End", depActual: "--", platform: "3", halt: "--" }
+                ]
+            },
+            "16525": {
+                name: "16525 - Bangalore - Kannur Express",
+                type: "Mail/Express",
+                maxSpeed: 90,
+                duration: "12h 30m",
+                coachTypes: ["AC 2-Tier", "AC 3-Tier", "Sleeper", "General"],
+                rake: "ICF Coach",
+                frequency: "Daily",
+                runningDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                facilities: ["Pantry Car", "Food"],
+                zone: "Southern Railway (SR)",
+                averageDelay: "35 minutes",
+                route: [
+                    { station: "YESVANTPUR JN (YPR)", dist: "0 km", arr: "Start", arrActual: "--", dep: "8:30 PM", depActual: "8:35 PM", platform: "4", halt: "5 min" },
+                    { station: "HASSAN (HAS)", dist: "180 km", arr: "11:45 PM", arrActual: "11:50 PM", dep: "11:52 PM", depActual: "11:57 PM", platform: "2", halt: "7 min" },
+                    { station: "MANGALURU JN (MAJN)", dist: "350 km", arr: "5:20 AM", arrActual: "5:25 AM", dep: "5:30 AM", depActual: "5:35 AM", platform: "3", halt: "10 min" },
+                    { station: "KANNUR (CAN)", dist: "495 km", arr: "9:00 AM", arrActual: "9:05 AM", dep: "End", depActual: "--", platform: "2", halt: "--" }
+                ]
+            },
+            "22691": {
+                name: "22691 - Vande Bharat Express",
+                type: "Vande Bharat Express",
+                maxSpeed: 160,
+                duration: "4h 45m",
+                coachTypes: ["AC Chair Car"],
+                rake: "Vande Bharat Coach",
+                frequency: "Daily",
+                runningDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                facilities: ["On-board WiFi", "Infotainment", "Rotating Seats", "Automatic Doors"],
+                zone: "Southern Railway (SR)",
+                averageDelay: "2 minutes",
+                route: [
+                    { station: "CHENNAI CENTRAL (MAS)", dist: "0 km", arr: "Start", arrActual: "--", dep: "5:45 AM", depActual: "5:47 AM", platform: "1", halt: "2 min" },
+                    { station: "KATPADI JN (KPD)", dist: "130 km", arr: "7:15 AM", arrActual: "7:17 AM", dep: "7:17 AM", depActual: "7:19 AM", platform: "2", halt: "2 min" },
+                    { station: "BANGALORE CY JN (SBC)", dist: "360 km", arr: "10:30 AM", arrActual: "10:32 AM", dep: "End", depActual: "--", platform: "1", halt: "--" }
+                ]
+            },
+            "12007": {
+                name: "12007 - Shatabdi Express",
+                type: "Shatabdi Express",
+                maxSpeed: 130,
+                duration: "5h 0m",
+                coachTypes: ["AC Chair Car", "Executive Chair Car"],
+                rake: "LHB Coach",
+                frequency: "Daily",
+                runningDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                facilities: ["Pantry Car", "Food", "Newspaper"],
+                zone: "Western Railway (WR)",
+                averageDelay: "8 minutes",
+                route: [
+                    { station: "MUMBAI CENTRAL (BCT)", dist: "0 km", arr: "Start", arrActual: "--", dep: "6:25 AM", depActual: "6:28 AM", platform: "1", halt: "3 min" },
+                    { station: "VAPI (VAPI)", dist: "168 km", arr: "8:34 AM", arrActual: "8:36 AM", dep: "8:36 AM", depActual: "8:38 AM", platform: "2", halt: "2 min" },
+                    { station: "SURAT (ST)", dist: "263 km", arr: "9:50 AM", arrActual: "9:52 AM", dep: "9:52 AM", depActual: "9:54 AM", platform: "3", halt: "2 min" },
+                    { station: "VADODARA JN (BRC)", dist: "392 km", arr: "11:25 AM", arrActual: "11:27 AM", dep: "End", depActual: "--", platform: "1", halt: "--" }
+                ]
+            }
+        };
+
+        class TrainTracker {
+            constructor() {
+                this.state = {
+                    train: null,
+                    currentStationIndex: 0,
+                    progress: 0,
+                    isHalted: true,
+                    haltCountdown: 0,
+                    isFinished: false,
+                    trainStatus: "Select a train",
+                    soundPlaying: false,
+                    volume: 0.3,
+                    soundEnabled: true,
+                    viewMode: 'tracking', // 'tracking' or 'details'
+                    autoScroll: true // Auto-scroll to current train position
+                };
+                
+                this.timer = null;
+                this.audioContext = null;
+                this.movingSoundInterval = null;
+                this.scrollInterval = null;
+                
+                this.init();
+            }
+            
+            init() {
+                this.renderApp();
+                this.bindEvents();
+            }
+            
+            bindEvents() {
+                const root = document.getElementById('root');
+                
+                root.addEventListener('click', (e) => {
+                    const trainCard = e.target.closest('.train-card');
+                    if (trainCard && trainCard.dataset.trainNo) {
+                        this.selectTrain(TRAINS[trainCard.dataset.trainNo]);
+                    }
+                    
+                    const soundToggle = e.target.closest('.sound-toggle');
+                    if (soundToggle) {
+                        this.toggleSound();
+                    }
+                    
+                    const backBtn = e.target.closest('.back-btn');
+                    if (backBtn) {
+                        this.clearTimer();
+                        this.state.train = null;
+                        this.state.viewMode = 'tracking';
+                        this.renderApp();
+                    }
+                    
+                    const viewToggle = e.target.closest('.view-toggle');
+                    if (viewToggle && this.state.train) {
+                        this.state.viewMode = this.state.viewMode === 'tracking' ? 'details' : 'tracking';
+                        this.renderApp();
+                    }
+                    
+                    const tabBtn = e.target.closest('.tab-btn');
+                    if (tabBtn && this.state.train) {
+                        const tabs = document.querySelectorAll('.tab-btn');
+                        tabs.forEach(tab => tab.classList.remove('active'));
+                        tabBtn.classList.add('active');
+                        this.renderTrainDetails();
+                    }
+                    
+                    const autoScrollToggle = e.target.closest('.auto-scroll-toggle');
+                    if (autoScrollToggle) {
+                        this.state.autoScroll = !this.state.autoScroll;
+                        this.renderApp();
+                    }
+                });
+                
+                root.addEventListener('input', (e) => {
+                    if (e.target.classList.contains('volume-slider')) {
+                        this.state.volume = parseFloat(e.target.value);
+                        this.renderApp();
+                    }
+                });
+                
+                // Listen for manual scroll to disable auto-scroll temporarily
+                const centerPanel = document.querySelector('.center-panel');
+                if (centerPanel) {
+                    centerPanel.addEventListener('scroll', () => {
+                        if (this.state.autoScroll) {
+                            this.state.autoScroll = false;
+                            this.renderApp();
+                        }
+                    });
+                }
+            }
+            
+            // Auto-scroll to keep train in view
+            autoScrollToTrain() {
+                if (!this.state.train || !this.state.autoScroll || this.state.viewMode !== 'tracking') return;
+                
+                const trackArea = document.querySelector('.track-area');
+                const trainIcon = document.querySelector('.train-icon');
+                
+                if (!trackArea || !trainIcon) return;
+                
+                const trainTop = trainIcon.offsetTop;
+                const containerHeight = trackArea.clientHeight;
+                const scrollTop = trackArea.scrollTop;
+                
+                // Calculate target scroll position to center the train
+                const targetScroll = trainTop - (containerHeight / 2) + 50;
+                
+                // Smooth scroll to target position
+                trackArea.scrollTo({
+                    top: targetScroll,
+                    behavior: 'smooth'
+                });
+            }
+            
+            // Audio Functions
+            initAudio() {
+                if (!this.state.soundEnabled) return;
+                
+                if (!this.audioContext) {
+                    try {
+                        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        this.audioContext.resume();
+                    } catch (e) {
+                        console.log("Audio not supported");
+                    }
+                }
+            }
+            
+            playTrainWhistle() {
+                if (!this.state.soundEnabled) return;
+                
+                try {
+                    this.initAudio();
+                    if (!this.audioContext) return;
+                    
+                    const ctx = this.audioContext;
+                    const currentTime = ctx.currentTime;
+                    const volume = this.state.volume * 0.3;
+                    
+                    const whistle = ctx.createOscillator();
+                    const whistleGain = ctx.createGain();
+                    
+                    whistle.type = "sine";
+                    whistle.frequency.setValueAtTime(440, currentTime);
+                    whistle.frequency.exponentialRampToValueAtTime(523.25, currentTime + 0.3);
+                    whistle.frequency.exponentialRampToValueAtTime(392, currentTime + 0.6);
+                    
+                    whistleGain.gain.setValueAtTime(0, currentTime);
+                    whistleGain.gain.linearRampToValueAtTime(volume, currentTime + 0.1);
+                    whistleGain.gain.exponentialRampToValueAtTime(0.001, currentTime + 0.8);
+                    
+                    whistle.connect(whistleGain);
+                    whistleGain.connect(ctx.destination);
+                    
+                    whistle.start(currentTime);
+                    whistle.stop(currentTime + 0.8);
+                    
+                } catch (e) {
+                    console.log("Error playing whistle");
+                }
+            }
+            
+            playStationBell() {
+                if (!this.state.soundEnabled) return;
+                
+                try {
+                    this.initAudio();
+                    if (!this.audioContext) return;
+                    
+                    const ctx = this.audioContext;
+                    const currentTime = ctx.currentTime;
+                    const volume = this.state.volume * 0.2;
+                    
+                    const bellFrequencies = [784, 880, 784];
+                    
+                    bellFrequencies.forEach((freq, index) => {
+                        const bellOsc = ctx.createOscillator();
+                        const bellGain = ctx.createGain();
+                        
+                        bellOsc.type = "sine";
+                        bellOsc.frequency.setValueAtTime(freq, currentTime + (index * 0.3));
+                        
+                        bellGain.gain.setValueAtTime(0, currentTime + (index * 0.3));
+                        bellGain.gain.linearRampToValueAtTime(volume, currentTime + (index * 0.3) + 0.1);
+                        bellGain.gain.exponentialRampToValueAtTime(0.001, currentTime + (index * 0.3) + 0.5);
+                        
+                        bellOsc.connect(bellGain);
+                        bellGain.connect(ctx.destination);
+                        
+                        bellOsc.start(currentTime + (index * 0.3));
+                        bellOsc.stop(currentTime + (index * 0.3) + 0.5);
+                    });
+                    
+                } catch (e) {
+                    console.log("Error playing bell");
+                }
+            }
+            
+            startContinuousMovingSound() {
+                if (!this.state.soundEnabled || this.movingSoundInterval) return;
+                
+                this.movingSoundInterval = setInterval(() => {
+                    if (!this.state.train || this.state.isHalted || this.state.isFinished || !this.audioContext) {
+                        clearInterval(this.movingSoundInterval);
+                        this.movingSoundInterval = null;
+                        return;
+                    }
+                    
+                    try {
+                        const ctx = this.audioContext;
+                        const currentTime = ctx.currentTime;
+                        const volume = this.state.volume * 0.1;
+                        
+                        const wheelOsc = ctx.createOscillator();
+                        const wheelGain = ctx.createGain();
+                        
+                        wheelOsc.type = "sine";
+                        wheelOsc.frequency.setValueAtTime(180 + Math.random() * 20, currentTime);
+                        
+                        wheelGain.gain.setValueAtTime(volume, currentTime);
+                        wheelGain.gain.exponentialRampToValueAtTime(0.001, currentTime + 0.3);
+                        
+                        wheelOsc.connect(wheelGain);
+                        wheelGain.connect(ctx.destination);
+                        
+                        wheelOsc.start(currentTime);
+                        wheelOsc.stop(currentTime + 0.3);
+                        
+                    } catch (e) {
+                        console.log("Error playing moving sound");
+                    }
+                }, 300);
+            }
+            
+            playTrainArrivalSound() {
+                if (this.state.soundPlaying || !this.state.soundEnabled) return;
+                
+                this.state.soundPlaying = true;
+                
+                if (this.movingSoundInterval) {
+                    clearInterval(this.movingSoundInterval);
+                    this.movingSoundInterval = null;
+                }
+                
+                this.playTrainWhistle();
+                setTimeout(() => {
+                    this.playStationBell();
+                    this.state.soundPlaying = false;
+                }, 500);
+                
+                this.renderApp();
+            }
+            
+            playTrainDepartureSound() {
+                if (this.state.soundPlaying || !this.state.soundEnabled) return;
+                
+                this.state.soundPlaying = true;
+                
+                this.playStationBell();
+                
+                setTimeout(() => {
+                    this.playTrainWhistle();
+                    setTimeout(() => {
+                        this.startContinuousMovingSound();
+                        this.state.soundPlaying = false;
+                        this.renderApp();
+                    }, 500);
+                }, 800);
+            }
+            
+            clearTimer() {
+                if (this.timer) {
+                    clearInterval(this.timer);
+                    this.timer = null;
+                }
+                if (this.movingSoundInterval) {
+                    clearInterval(this.movingSoundInterval);
+                    this.movingSoundInterval = null;
+                }
+                if (this.scrollInterval) {
+                    clearInterval(this.scrollInterval);
+                    this.scrollInterval = null;
+                }
+            }
+            
+            toggleSound() {
+                this.state.soundEnabled = !this.state.soundEnabled;
+                if (!this.state.soundEnabled) {
+                    this.clearTimer();
+                }
+                this.renderApp();
+            }
+            
+            selectTrain(train) {
+                this.clearTimer();
+                this.state.train = train;
+                this.state.currentStationIndex = 0;
+                this.state.progress = 0;
+                this.state.isHalted = true;
+                this.state.haltCountdown = 0;
+                this.state.isFinished = false;
+                this.state.viewMode = 'tracking';
+                this.state.autoScroll = true;
+                
+                if (this.state.soundEnabled) {
+                    this.playStationBell();
+                }
+                
+                this.state.trainStatus = `Stopped at ${train.route[0].station}`;
+                this.startTrainTimer();
+                this.startAutoScroll();
+                this.renderApp();
+                
+                // Scroll to top when selecting new train
+                setTimeout(() => {
+                    const centerPanel = document.querySelector('.center-panel');
+                    if (centerPanel) {
+                        centerPanel.scrollTop = 0;
+                    }
+                }, 100);
+            }
+            
+            startTrainTimer() {
+                if (!this.state.train) return;
+                
+                if (this.state.isFinished) {
+                    this.clearTimer();
+                    return;
+                }
+                
+                this.clearTimer();
+                
+                this.timer = setInterval(() => {
+                    if (this.state.isHalted) {
+                        this.state.haltCountdown++;
+                        
+                        if (this.state.haltCountdown >= 10) {
+                            if (this.state.currentStationIndex === this.state.train.route.length - 1) {
+                                this.state.isFinished = true;
+                                this.clearTimer();
+                                this.playTrainArrivalSound();
+                                this.state.trainStatus = `Arrived at final destination: ${this.state.train.route[this.state.currentStationIndex].station}`;
+                                this.state.haltCountdown = 0;
+                            } else {
+                                this.state.isHalted = false;
+                                this.state.progress = 0;
+                                this.playTrainDepartureSound();
+                                this.state.trainStatus = `Departing from ${this.state.train.route[this.state.currentStationIndex].station}`;
+                                this.state.haltCountdown = 0;
+                            }
+                        }
+                    } else {
+                        this.state.progress += 10;
+                        
+                        if (this.state.progress >= 100) {
+                            const nextStationIndex = this.state.currentStationIndex + 1;
+                            this.state.currentStationIndex = nextStationIndex;
+                            this.state.isHalted = true;
+                            this.state.haltCountdown = 0;
+                            this.playTrainArrivalSound();
+                            this.state.trainStatus = `Arrived at ${this.state.train.route[nextStationIndex].station}`;
+                            this.state.progress = 100;
+                        }
+                    }
+                    
+                    this.renderApp();
+                }, 1000);
+            }
+            
+            startAutoScroll() {
+                if (this.scrollInterval) {
+                    clearInterval(this.scrollInterval);
+                }
+                
+                this.scrollInterval = setInterval(() => {
+                    if (this.state.autoScroll && this.state.train && this.state.viewMode === 'tracking') {
+                        this.autoScrollToTrain();
+                    }
+                }, 1000);
+            }
+            
+            calculateTrainPosition() {
+                if (!this.state.train) return 0;
+                
+                const stationHeight = 100;
+                
+                if (this.state.isFinished) {
+                    return (this.state.train.route.length - 1) * stationHeight + 10;
+                }
+                
+                const basePosition = this.state.currentStationIndex * stationHeight;
+                
+                if (this.state.isHalted) {
+                    return basePosition + 10;
+                }
+                
+                const movement = (this.state.progress / 100) * stationHeight;
+                return basePosition + 10 + movement;
+            }
+            
+            getCurrentStation() {
+                return this.state.train?.route[this.state.currentStationIndex] || this.state.train?.route[0];
+            }
+            
+            getNextStation() {
+                if (!this.state.train || this.state.isFinished || this.state.currentStationIndex >= this.state.train.route.length - 1) {
+                    return null;
+                }
+                return this.state.train.route[this.state.currentStationIndex + 1];
+            }
+            
+            renderTrainDetails() {
+                if (!this.state.train) return '';
+                
+                const train = this.state.train;
+                const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab || 'info';
+                
+                let detailsHTML = '';
+                
+                if (currentTab === 'info') {
+                    detailsHTML = `
+                        <div class="train-info-grid">
+                            <div class="train-info-item">
+                                <div class="info-label">Train Number</div>
+                                <div class="info-value">${Object.keys(TRAINS).find(key => TRAINS[key].name === train.name)}</div>
+                            </div>
+                            <div class="train-info-item">
+                                <div class="info-label">Train Type</div>
+                                <div class="info-value">${train.type}</div>
+                            </div>
+                            <div class="train-info-item">
+                                <div class="info-label">Max Speed</div>
+                                <div class="info-value">${train.maxSpeed} km/h</div>
+                            </div>
+                            <div class="train-info-item">
+                                <div class="info-label">Duration</div>
+                                <div class="info-value">${train.duration}</div>
+                            </div>
+                            <div class="train-info-item">
+                                <div class="info-label">Coaches</div>
+                                <div class="info-value">${train.coachTypes.join(', ')}</div>
+                            </div>
+                            <div class="train-info-item">
+                                <div class="info-label">Rake Type</div>
+                                <div class="info-value">${train.rake}</div>
+                            </div>
+                            <div class="train-info-item">
+                                <div class="info-label">Frequency</div>
+                                <div class="info-value">${train.frequency}</div>
+                            </div>
+                            <div class="train-info-item">
+                                <div class="info-label">Running Days</div>
+                                <div class="info-value">${train.runningDays.join(', ')}</div>
+                            </div>
+                            <div class="train-info-item">
+                                <div class="info-label">Railway Zone</div>
+                                <div class="info-value">${train.zone}</div>
+                            </div>
+                            <div class="train-info-item">
+                                <div class="info-label">Avg. Delay</div>
+                                <div class="info-value">${train.averageDelay}</div>
+                            </div>
+                        </div>
+                        
+                        <div class="facilities-section">
+                            <h4>On-board Facilities</h4>
+                            <div class="facilities-grid">
+                                ${train.facilities.map(facility => `
+                                    <div class="facility-item">${facility}</div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                } else if (currentTab === 'schedule') {
+                    detailsHTML = `
+                        <div class="schedule-table">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Station</th>
+                                        <th>Distance</th>
+                                        <th>Arrival</th>
+                                        <th>Departure</th>
+                                        <th>Platform</th>
+                                        <th>Halt Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${train.route.map((station, index) => `
+                                        <tr ${index === this.state.currentStationIndex ? 'class="current-station"' : ''}>
+                                            <td>
+                                                ${index === this.state.currentStationIndex ? '🚆 ' : ''}
+                                                ${station.station}
+                                            </td>
+                                            <td>${station.dist}</td>
+                                            <td>${station.arr}</td>
+                                            <td>${station.dep}</td>
+                                            <td>${station.platform}</td>
+                                            <td>${station.halt}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                } else if (currentTab === 'stats') {
+                    const totalDistance = train.route[train.route.length - 1].dist;
+                    const avgSpeed = train.maxSpeed * 0.8; // Approximate average speed
+                    
+                    detailsHTML = `
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-icon">📏</div>
+                                <div class="stat-value">${totalDistance}</div>
+                                <div class="stat-label">Total Distance</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">⚡</div>
+                                <div class="stat-value">${train.maxSpeed} km/h</div>
+                                <div class="stat-label">Max Speed</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">📊</div>
+                                <div class="stat-value">${Math.round(avgSpeed)} km/h</div>
+                                <div class="stat-label">Avg Speed</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">🕒</div>
+                                <div class="stat-value">${train.duration}</div>
+                                <div class="stat-label">Journey Time</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">🚉</div>
+                                <div class="stat-value">${train.route.length}</div>
+                                <div class="stat-label">Total Stops</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">⏱️</div>
+                                <div class="stat-value">${train.averageDelay}</div>
+                                <div class="stat-label">Avg Delay</div>
+                            </div>
+                        </div>
+                        
+                        <div class="route-info">
+                            <h4>Route Information</h4>
+                            <div class="route-stats">
+                                <div class="route-stat">
+                                    <span>Starting Station:</span>
+                                    <strong>${train.route[0].station}</strong>
+                                </div>
+                                <div class="route-stat">
+                                    <span>Destination Station:</span>
+                                    <strong>${train.route[train.route.length - 1].station}</strong>
+                                </div>
+                                <div class="route-stat">
+                                    <span>Intermediate Stops:</span>
+                                    <strong>${train.route.length - 2}</strong>
+                                </div>
+                                <div class="route-stat">
+                                    <span>Current Progress:</span>
+                                    <strong>${this.state.currentStationIndex + 1}/${train.route.length} stations</strong>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else if (currentTab === 'facilities') {
+                    detailsHTML = `
+                        <div class="facilities-details">
+                            <div class="facilities-grid-large">
+                                ${train.facilities.map(facility => `
+                                    <div class="facility-card">
+                                        <div class="facility-icon">✅</div>
+                                        <div class="facility-name">${facility}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <div class="train-summary">
+                                <h4>Train Summary</h4>
+                                <p>${train.name} is a ${train.type.toLowerCase()} running ${train.frequency.toLowerCase()} between 
+                                ${train.route[0].station.split('(')[0].trim()} and ${train.route[train.route.length - 1].station.split('(')[0].trim()}.</p>
+                                <p>The train operates with ${train.coachTypes.join(', ')} coaches and maintains an average speed of ${Math.round(train.maxSpeed * 0.8)} km/h.</p>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                return detailsHTML;
+            }
+            
+            renderApp() {
+                const root = document.getElementById('root');
+                const train = this.state.train;
+                
+                let appHTML = '';
+                
+                // Progress Bar
+                if (train && !this.state.isFinished && !this.state.isHalted) {
+                    appHTML += `
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${this.state.progress}%"></div>
+                        </div>
+                    `;
+                }
+                
+                // Audio Controls
+                appHTML += `
+                    <div class="audio-controls">
+                        <div style="font-size: 12px; color: ${this.state.soundEnabled ? '#00cc66' : '#8b949e'}">
+                            🔊 ${this.state.soundEnabled ? 'Sound ON' : 'Sound OFF'}
+                        </div>
+                        <button class="sound-toggle ${this.state.soundEnabled ? 'active' : ''}">
+                            ${this.state.soundEnabled ? 'MUTE' : 'UNMUTE'}
+                        </button>
+                        ${this.state.soundEnabled ? `
+                            <input type="range" min="0" max="1" step="0.1" value="${this.state.volume}" class="volume-slider">
+                        ` : ''}
+                    </div>
+                `;
+                
+                // Auto-scroll indicator
+                if (train && this.state.viewMode === 'tracking') {
+                    appHTML += `
+                        <div class="auto-scroll-indicator">
+                            <span>${this.state.autoScroll ? '🔍 Auto-scroll ON' : '✋ Manual scroll'}</span>
+                            <button class="auto-scroll-toggle" style="background: transparent; border: none; color: #00ff99; cursor: pointer;">
+                                ${this.state.autoScroll ? '⏸️' : '▶️'}
+                            </button>
+                        </div>
+                    `;
+                }
+                
+                // Header
+                appHTML += `
+                    <div class="header">
+                        <div class="header-left back-btn" style="cursor: pointer;">
+                            <span class="back-btn-icon">${train ? '←' : '🚆'}</span>
+                            <div class="header-text">
+                                <div class="train-title">${train ? train.name : 'Indian Railway Tracker'}</div>
+                                <div class="live-status">${train ? this.state.trainStatus : 'Select a train to begin tracking'}</div>
+                            </div>
+                        </div>
+                        ${train ? `
+                            <div class="header-right">
+                                <button class="view-toggle">
+                                    ${this.state.viewMode === 'tracking' ? '📊 View Details' : '📍 View Tracking'}
+                                </button>
+                                <div class="train-type-badge">${train.type}</div>
+                            </div>
+                        ` : `
+                            <div class="header-right">
+                                <div class="active-trains">${Object.keys(TRAINS).length} Trains Active</div>
+                            </div>
+                        `}
+                    </div>
+                `;
+                
+                // Main Layout
+                appHTML += '<div class="layout">';
+                
+                // Sidebar
+                appHTML += `
+                    <div class="sidebar">
+                        <div class="sidebar-header">
+                            <div class="sidebar-label">ALL TRAINS</div>
+                            <div class="train-count">${Object.keys(TRAINS).length} Trains Available</div>
+                            <div class="train-filters">
+                                <div class="filter-item active">All</div>
+                                <div class="filter-item">Superfast</div>
+                                <div class="filter-item">Express</div>
+                                <div class="filter-item">Premium</div>
+                            </div>
+                        </div>
+                        <div class="train-list">
+                `;
+                
+                for (const [no, t] of Object.entries(TRAINS)) {
+                    const isSelected = train?.name === t.name;
+                    appHTML += `
+                        <div class="train-card ${isSelected ? 'selected' : ''}" data-train-no="${no}">
+                            <div class="card-header">
+                                <div class="train-number">${no}</div>
+                                <div class="train-type">${t.type}</div>
+                                <div class="train-status">${t.frequency}</div>
+                            </div>
+                            <div class="train-name">${t.name}</div>
+                            <div class="train-meta">
+                                <span>${t.route[0].station.split('(')[0].trim()} → ${t.route[t.route.length - 1].station.split('(')[0].trim()}</span>
+                            </div>
+                            <div class="train-stats">
+                                <span>⚡ ${t.maxSpeed} km/h</span>
+                                <span>⏱️ ${t.duration}</span>
+                                <span>🚉 ${t.route.length} stops</span>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                appHTML += `
+                        </div>
+                    </div>
+                `;
+                
+                // Main Content
+                appHTML += '<div class="main-content">';
+                
+                if (train) {
+                    if (this.state.viewMode === 'tracking') {
+                        // Render train tracking view
+                        const trainPosition = this.calculateTrainPosition();
+                        const currentStation = this.getCurrentStation();
+                        const nextStation = this.getNextStation();
+                        
+                        appHTML += `
+                            <div class="center-panel">
+                                <div class="map-header">
+                                    <span>SCHEDULED TIME</span>
+                                    <span>JOURNEY MAP</span>
+                                    <span>ACTUAL TIME</span>
+                                </div>
+                                <div class="track-area" style="height: calc(100vh - 150px); overflow-y: auto;">
+                                    <div class="track-line"></div>
+                                    <div class="train-icon ${!this.state.isHalted && !this.state.isFinished ? 'train-moving' : ''}" style="top: ${trainPosition}px">🚆</div>
+                        `;
+                        
+                        train.route.forEach((s, i) => {
+                            const isCurrent = i === this.state.currentStationIndex;
+                            const isPast = i < this.state.currentStationIndex;
+                            const isHaltedHere = this.state.isHalted && isCurrent;
+                            
+                            appHTML += `
+                                <div class="station-row">
+                                    <div class="left-col">
+                                        <div class="time-label ${isPast ? 'past' : isCurrent ? 'current' : ''}">${s.arr}</div>
+                                        <div class="time-label-small">Scheduled</div>
+                                    </div>
+                                    <div class="center-col">
+                                        <div class="station-dot ${isPast ? 'past' : isCurrent ? 'current' : ''} ${isHaltedHere ? 'station-pulse' : ''}"></div>
+                                        <div class="station-name ${isPast ? 'past' : isCurrent ? 'current' : ''}">
+                                            ${isCurrent ? '🚆 ' : ''}${s.station.split('(')[0].trim()}
+                                            <div class="station-code">(${s.station.match(/\(([^)]+)\)/)?.[1]})</div>
+                                        </div>
+                                        <div class="station-info">
+                                            <span>${s.dist}</span>
+                                            <span>•</span>
+                                            <span>Platform ${s.platform}</span>
+                                            <span>•</span>
+                                            <span>Halt: ${s.halt}</span>
+                                        </div>
+                                    </div>
+                                    <div class="right-col">
+                                        <div class="time-label ${isPast ? 'past' : isCurrent ? 'current' : ''}">${s.depActual}</div>
+                                        <div class="time-label-small">Actual</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        appHTML += `
+                                </div>
+                            </div>
+                            <div class="right-panel">
+                                <div class="info-card">
+                                    <h3>Train Information</h3>
+                                    <div class="info-grid">
+                                        <div class="info-item">
+                                            <span class="info-label">Train Number:</span>
+                                            <span class="info-value">${Object.keys(TRAINS).find(key => TRAINS[key].name === train.name)}</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <span class="info-label">Train Type:</span>
+                                            <span class="info-value">${train.type}</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <span class="info-label">Max Speed:</span>
+                                            <span class="info-value">${train.maxSpeed} km/h</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <span class="info-label">Duration:</span>
+                                            <span class="info-value">${train.duration}</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <span class="info-label">Coaches:</span>
+                                            <span class="info-value">${train.coachTypes.length} types</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <span class="info-label">Railway Zone:</span>
+                                            <span class="info-value">${train.zone}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="info-card">
+                                    <h3>Current Status</h3>
+                                    <div class="status-details">
+                                        <div class="status-item">
+                                            <span class="status-label">Status:</span>
+                                            <span class="status-value ${this.state.isFinished ? 'finished' : this.state.isHalted ? 'halted' : 'moving'}">
+                                                ${this.state.isFinished ? 'Journey Completed' : this.state.isHalted ? 'Stopped' : 'En Route'}
+                                            </span>
+                                        </div>
+                                        <div class="status-item">
+                                            <span class="status-label">Current Station:</span>
+                                            <span class="status-value">${currentStation?.station.split('(')[0].trim()}</span>
+                                        </div>
+                                        <div class="status-item">
+                                            <span class="status-label">Distance Covered:</span>
+                                            <span class="status-value">${currentStation?.dist}</span>
+                                        </div>
+                                        <div class="status-item">
+                                            <span class="status-label">Platform:</span>
+                                            <span class="status-value">${currentStation?.platform}</span>
+                                        </div>
+                                        <div class="status-item">
+                                            <span class="status-label">Progress:</span>
+                                            <span class="status-value">${this.state.currentStationIndex + 1}/${train.route.length} stations</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="info-card">
+                                    <h3>Journey Details</h3>
+                                    ${this.state.isFinished ? `
+                                        <div class="final-status">
+                                            <div class="status-icon">🏆</div>
+                                            <div class="status-text">Journey Completed</div>
+                                            <div class="arrival-time">Arrived at ${train.route[train.route.length - 1].station}</div>
+                                            <div class="total-distance">Total distance: ${train.route[train.route.length - 1].dist}</div>
+                                        </div>
+                                    ` : this.state.isHalted ? `
+                                        <div class="halt-status">
+                                            <div class="status-icon">⏸️</div>
+                                            <div class="status-text">STOPPED AT STATION</div>
+                                            <div class="station-name">${currentStation?.station.split('(')[0].trim()}</div>
+                                            <div class="departure-timer">
+                                                <div class="timer-bar">
+                                                    <div class="timer-fill" style="width: ${(this.state.haltCountdown/10)*100}%"></div>
+                                                </div>
+                                                <div class="timer-text">Departing in ${10 - this.state.haltCountdown} seconds</div>
+                                            </div>
+                                        </div>
+                                    ` : `
+                                        <div class="moving-status">
+                                            <div class="status-icon">▶️</div>
+                                            <div class="status-text">TRAIN IN MOTION</div>
+                                            <div class="progress-section">
+                                                <div class="progress-text">Segment Progress: ${this.state.progress}%</div>
+                                                <div class="progress-bar-small">
+                                                    <div class="progress-fill-small" style="width: ${this.state.progress}%"></div>
+                                                </div>
+                                                <div class="next-stop">Next Stop: ${nextStation?.station.split('(')[0].trim() || 'Destination'}</div>
+                                                <div class="distance-remaining">Remaining: ${nextStation ? nextStation.dist : '0 km'}</div>
+                                                <div class="time-to-next">Time to next: ${10 - Math.floor(this.state.progress/10)} seconds</div>
+                                            </div>
+                                        </div>
+                                    `}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        // Render detailed train information view
+                        appHTML += `
+                            <div class="details-panel">
+                                <div class="train-header">
+                                    <div class="train-title-large">${train.name}</div>
+                                    <div class="train-subtitle">${train.type} • ${train.zone}</div>
+                                    <div class="train-route">
+                                        ${train.route[0].station.split('(')[0].trim()} → ${train.route[train.route.length - 1].station.split('(')[0].trim()}
+                                    </div>
+                                    <div class="train-progress">
+                                        <span>Current Progress: ${this.state.currentStationIndex + 1}/${train.route.length} stations</span>
+                                        <div class="progress-bar-horizontal">
+                                            <div class="progress-fill-horizontal" style="width: ${((this.state.currentStationIndex + 1) / train.route.length) * 100}%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="tabs">
+                                    <button class="tab-btn active" data-tab="info">Train Info</button>
+                                    <button class="tab-btn" data-tab="schedule">Schedule</button>
+                                    <button class="tab-btn" data-tab="stats">Statistics</button>
+                                    <button class="tab-btn" data-tab="facilities">Facilities</button>
+                                </div>
+                                
+                                <div class="tab-content">
+                                    ${this.renderTrainDetails()}
+                                </div>
+                            </div>
+                        `;
+                    }
+                } else {
+                    // Render welcome screen
+                    appHTML += `
+                        <div class="welcome-screen">
+                            <div class="welcome-icon">🚆</div>
+                            <h1>Indian Railway Tracker</h1>
+                            <p class="welcome-subtitle">Comprehensive Indian Railway Simulation</p>
+                            
+                            <div class="welcome-stats">
+                                <div class="stat-box">
+                                    <div class="stat-number">${Object.keys(TRAINS).length}</div>
+                                    <div class="stat-label">Active Trains</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-number">10+</div>
+                                    <div class="stat-label">Train Types</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-number">160</div>
+                                    <div class="stat-label">Max Speed (km/h)</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-number">48h</div>
+                                    <div class="stat-label">Longest Journey</div>
+                                </div>
+                            </div>
+                            
+                            <div class="welcome-info">
+                                <div class="info-box">
+                                    <div class="info-title">🎯 Features</div>
+                                    <div class="features-grid">
+                                        <div class="feature-item">
+                                            <div class="feature-icon">🔊</div>
+                                            <div class="feature-text">Realistic Train Sounds</div>
+                                        </div>
+                                        <div class="feature-item">
+                                            <div class="feature-icon">📍</div>
+                                            <div class="feature-text">Live Train Tracking</div>
+                                        </div>
+                                        <div class="feature-item">
+                                            <div class="feature-icon">📊</div>
+                                            <div class="feature-text">Detailed Train Info</div>
+                                        </div>
+                                        <div class="feature-item">
+                                            <div class="feature-icon">🚉</div>
+                                            <div class="feature-text">Multiple Train Types</div>
+                                        </div>
+                                        <div class="feature-item">
+                                            <div class="feature-icon">🔍</div>
+                                            <div class="feature-text">Auto-scroll Tracking</div>
+                                        </div>
+                                        <div class="feature-item">
+                                            <div class="feature-icon">⚡</div>
+                                            <div class="feature-text">Real-time Updates</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="train-types">
+                                        <div class="type-tag">Rajdhani Express</div>
+                                        <div class="type-tag">Shatabdi Express</div>
+                                        <div class="type-tag">Vande Bharat</div>
+                                        <div class="type-tag">Superfast Express</div>
+                                        <div class="type-tag">Mail/Express</div>
+                                        <div class="type-tag">Intercity</div>
+                                    </div>
+                                    
+                                    <div class="info-note">Select a train from the sidebar to begin tracking</div>
+                                    <div class="info-tip" style="font-size: 12px; color: #8b949e; margin-top: 10px;">
+                                        💡 Tip: The train map will auto-scroll to follow the train's position. Click the pause button to disable auto-scroll.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                appHTML += '</div></div>';
+                
+                root.innerHTML = appHTML;
+                
+                // Add CSS
+                if (!document.querySelector('#app-styles')) {
+                    const style = document.createElement('style');
+                    style.id = 'app-styles';
+                    style.textContent = this.getStyles();
+                    document.head.appendChild(style);
+                }
+                
+                // Initialize auto-scroll after rendering
+                if (train && this.state.viewMode === 'tracking') {
+                    setTimeout(() => this.autoScrollToTrain(), 100);
+                }
+            }
+            
+            getStyles() {
+                return `
+                    .progress-bar {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 4px;
+                        background: #161b22;
+                        z-index: 1000;
+                    }
+                    
+                    .progress-fill {
+                        height: 100%;
+                        background: #00ff99;
+                        transition: width 0.5s linear;
+                        box-shadow: 0 0 8px #00ff99;
+                    }
+                    
+                    .header {
+                        padding: 15px 25px;
+                        background: #161b22;
+                        border-bottom: 1px solid #30363d;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    }
+                    
+                    .header-left {
+                        display: flex;
+                        align-items: center;
+                    }
+                    
+                    .back-btn-icon {
+                        font-size: 24px;
+                        margin-right: 10px;
+                        color: #8b949e;
+                    }
+                    
+                    .train-title {
+                        font-size: 18px;
+                        font-weight: bold;
+                        color: #ffffff;
+                    }
+                    
+                    .live-status {
+                        font-size: 12px;
+                        color: #00ff99;
+                        text-transform: uppercase;
+                        margin-top: 3px;
+                    }
+                    
+                    .header-right {
+                        display: flex;
+                        align-items: center;
+                        gap: 15px;
+                    }
+                    
+                    .view-toggle {
+                        background: #21262d;
+                        border: 1px solid #30363d;
+                        border-radius: 5px;
+                        padding: 8px 15px;
+                        color: #8b949e;
+                        font-size: 12px;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                    }
+                    
+                    .view-toggle:hover {
+                        background: #30363d;
+                        color: #ffffff;
+                    }
+                    
+                    .train-type-badge {
+                        padding: 6px 12px;
+                        background: rgba(0, 255, 153, 0.1);
+                        border: 1px solid #00ff99;
+                        border-radius: 20px;
+                        font-size: 12px;
+                        color: #00ff99;
+                    }
+                    
+                    .active-trains {
+                        font-size: 12px;
+                        color: #8b949e;
+                    }
+                    
+                    .layout {
+                        display: flex;
+                        height: calc(100vh - 69px);
+                    }
+                    
+                    .sidebar {
+                        width: 320px;
+                        border-right: 1px solid #30363d;
+                        background: #0d1117;
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    
+                    .sidebar-header {
+                        padding: 20px 20px 10px;
+                        border-bottom: 1px solid #30363d;
+                    }
+                    
+                    .sidebar-label {
+                        font-size: 12px;
+                        color: #8b949e;
+                        font-weight: bold;
+                        letter-spacing: 1px;
+                        margin-bottom: 5px;
+                    }
+                    
+                    .train-count {
+                        font-size: 11px;
+                        color: #00ff99;
+                        margin-bottom: 15px;
+                    }
+                    
+                    .train-filters {
+                        display: flex;
+                        gap: 8px;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .filter-item {
+                        padding: 4px 10px;
+                        background: #21262d;
+                        border-radius: 12px;
+                        font-size: 10px;
+                        color: #8b949e;
+                        cursor: pointer;
+                    }
+                    
+                    .filter-item.active {
+                        background: #00cc66;
+                        color: #000;
+                    }
+                    
+                    .train-list {
+                        flex: 1;
+                        overflow-y: auto;
+                        padding: 15px;
+                    }
+                    
+                    .train-card {
+                        padding: 15px;
+                        background: #161b22;
+                        margin-bottom: 10px;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+                        border-left: 5px solid transparent;
+                    }
+                    
+                    .train-card:hover {
+                        background: #21262d;
+                        transform: translateY(-2px);
+                    }
+                    
+                    .train-card.selected {
+                        border-left: 5px solid #00ff99;
+                        background: #21262d;
+                    }
+                    
+                    .card-header {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        margin-bottom: 5px;
+                    }
+                    
+                    .train-number {
+                        font-weight: 800;
+                        color: #add8e6;
+                        font-size: 14px;
+                    }
+                    
+                    .train-type {
+                        font-size: 10px;
+                        color: #00ff99;
+                        padding: 2px 6px;
+                        background: rgba(0, 255, 153, 0.1);
+                        border-radius: 10px;
+                    }
+                    
+                    .train-status {
+                        font-size: 10px;
+                        color: #8b949e;
+                    }
+                    
+                    .train-name {
+                        font-size: 13px;
+                        font-weight: 500;
+                        margin: 8px 0;
+                        color: #ffffff;
+                    }
+                    
+                    .train-meta {
+                        font-size: 11px;
+                        color: #8b949e;
+                        margin-bottom: 8px;
+                    }
+                    
+                    .train-stats {
+                        font-size: 10px;
+                        opacity: 0.6;
+                        display: flex;
+                        justify-content: space-between;
+                    }
+                    
+                    .main-content {
+                        flex: 1;
+                        background: #0d1117;
+                        overflow-y: auto;
+                        display: flex;
+                    }
+                    
+                    .center-panel {
+                        flex: 1;
+                        padding: 20px;
+                        overflow: hidden;
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    
+                    .map-header {
+                        display: flex;
+                        justify-content: space-between;
+                        font-size: 12px;
+                        padding-bottom: 15px;
+                        margin-bottom: 20px;
+                        border-bottom: 1px solid #30363d;
+                        color: #8b949e;
+                    }
+                    
+                    .track-area {
+                        position: relative;
+                        flex: 1;
+                        overflow-y: auto;
+                        padding-bottom: 50px;
+                    }
+                    
+                    .track-line {
+                        position: absolute;
+                        left: 50%;
+                        top: 10px;
+                        bottom: 100px;
+                        width: 4px;
+                        background-color: #30363d;
+                        border-radius: 2px;
+                        transform: translateX(-50%);
+                        z-index: 1;
+                    }
+                    
+                    .train-icon {
+                        position: absolute;
+                        left: 50%;
+                        font-size: 32px;
+                        transition: top 1s linear;
+                        z-index: 20;
+                        text-shadow: 0 0 10px rgba(0, 255, 153, 0.5);
+                        filter: drop-shadow(0 0 8px rgba(0, 255, 153, 0.7));
+                        transform: translateX(-50%) translateY(-50%);
+                    }
+                    
+                    .station-row {
+                        display: flex;
+                        height: 100px;
+                        align-items: flex-start;
+                        margin-bottom: 5px;
+                        position: relative;
+                    }
+                    
+                    .left-col, .right-col {
+                        width: 120px;
+                        position: absolute;
+                    }
+                    
+                    .left-col {
+                        text-align: right;
+                        padding-right: 30px;
+                        left: 0;
+                    }
+                    
+                    .right-col {
+                        text-align: left;
+                        padding-left: 30px;
+                        right: 0;
+                    }
+                    
+                    .center-col {
+                        flex: 1;
+                        padding: 0 20px;
+                        text-align: center;
+                        margin: 0 auto;
+                        max-width: 300px;
+                        position: relative;
+                    }
+                    
+                    .station-dot {
+                        position: absolute;
+                        width: 20px;
+                        height: 20px;
+                        border-radius: 50%;
+                        border: 3px solid #0d1117;
+                        z-index: 10;
+                        top: 10px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                    }
+                    
+                    .station-dot.past {
+                        background: #00ff99;
+                    }
+                    
+                    .station-dot.current {
+                        background: #ffcc00;
+                    }
+                    
+                    .station-dot:not(.past):not(.current) {
+                        background: #30363d;
+                    }
+                    
+                    .time-label {
+                        font-size: 14px;
+                        font-weight: 500;
+                    }
+                    
+                    .time-label.past {
+                        color: #8b949e;
+                    }
+                    
+                    .time-label.current {
+                        color: #ffcc00;
+                    }
+                    
+                    .time-label-small {
+                        font-size: 10px;
+                        margin-top: 5px;
+                        color: #8b949e;
+                    }
+                    
+                    .station-name {
+                        font-size: 16px;
+                        margin-top: 25px;
+                        position: relative;
+                        text-align: center;
+                    }
+                    
+                    .station-name.past {
+                        color: #00ff99;
+                    }
+                    
+                    .station-name.current {
+                        color: #ffcc00;
+                        font-weight: bold;
+                    }
+                    
+                    .station-name:not(.past):not(.current) {
+                        color: #8b949e;
+                    }
+                    
+                    .station-code {
+                        font-size: 12px;
+                        margin-top: 2px;
+                    }
+                    
+                    .station-info {
+                        font-size: 12px;
+                        color: #8b949e;
+                        margin-top: 5px;
+                        text-align: center;
+                    }
+                    
+                    .station-info span {
+                        margin: 0 4px;
+                    }
+                    
+                    .right-panel {
+                        width: 320px;
+                        padding: 20px;
+                        border-left: 1px solid #30363d;
+                        background: #0d1117;
+                        overflow-y: auto;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 20px;
+                    }
+                    
+                    .info-card {
+                        background: #161b22;
+                        border-radius: 10px;
+                        padding: 20px;
+                    }
+                    
+                    .info-card h3 {
+                        font-size: 14px;
+                        font-weight: bold;
+                        color: #c9d1d9;
+                        margin-bottom: 15px;
+                        padding-bottom: 10px;
+                        border-bottom: 1px solid #30363d;
+                    }
+                    
+                    .info-grid {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 12px;
+                    }
+                    
+                    .info-item {
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    
+                    .info-label {
+                        font-size: 11px;
+                        color: #8b949e;
+                        margin-bottom: 3px;
+                    }
+                    
+                    .info-value {
+                        font-size: 13px;
+                        color: #ffffff;
+                        font-weight: 500;
+                    }
+                    
+                    .status-details {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                    }
+                    
+                    .status-item {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    }
+                    
+                    .status-label {
+                        font-size: 12px;
+                        color: #8b949e;
+                    }
+                    
+                    .status-value {
+                        font-size: 13px;
+                        font-weight: 500;
+                    }
+                    
+                    .status-value.finished {
+                        color: #00ff99;
+                    }
+                    
+                    .status-value.halted {
+                        color: #ffcc00;
+                    }
+                    
+                    .status-value.moving {
+                        color: #00ccff;
+                    }
+                    
+                    .final-status, .halt-status, .moving-status {
+                        text-align: center;
+                        padding: 10px 0;
+                    }
+                    
+                    .status-icon {
+                        font-size: 32px;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .status-text {
+                        font-size: 16px;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .station-name, .arrival-time, .distance-remaining, .total-distance, .time-to-next {
+                        font-size: 12px;
+                        color: #8b949e;
+                        margin-top: 5px;
+                    }
+                    
+                    .total-distance {
+                        color: #00ff99;
+                        font-weight: 500;
+                    }
+                    
+                    .final-status .status-text {
+                        color: #00ff99;
+                    }
+                    
+                    .halt-status .status-text {
+                        color: #ffcc00;
+                    }
+                    
+                    .moving-status .status-text {
+                        color: #00ff99;
+                    }
+                    
+                    .departure-timer, .progress-section {
+                        background: rgba(255, 204, 0, 0.05);
+                        border-radius: 8px;
+                        padding: 15px;
+                        border: 1px solid #30363d;
+                        margin-top: 10px;
+                    }
+                    
+                    .timer-bar, .progress-bar-small {
+                        width: 100%;
+                        height: 6px;
+                        background: #333;
+                        border-radius: 3px;
+                        overflow: hidden;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .timer-fill {
+                        height: 100%;
+                        background: #ffcc00;
+                        transition: width 1s linear;
+                    }
+                    
+                    .progress-fill-small {
+                        height: 100%;
+                        background: linear-gradient(90deg, #00ff99, #00ccff);
+                        transition: width 1s linear;
+                    }
+                    
+                    .timer-text, .progress-text, .next-stop {
+                        text-align: center;
+                        font-size: 12px;
+                        color: #8b949e;
+                    }
+                    
+                    .progress-text {
+                        margin-bottom: 10px;
+                    }
+                    
+                    .next-stop {
+                        margin-top: 10px;
+                        color: #00ff99;
+                        font-weight: 500;
+                    }
+                    
+                    /* Details Panel */
+                    .details-panel {
+                        flex: 1;
+                        padding: 20px;
+                        overflow-y: auto;
+                    }
+                    
+                    .train-header {
+                        margin-bottom: 30px;
+                    }
+                    
+                    .train-title-large {
+                        font-size: 28px;
+                        font-weight: bold;
+                        color: #ffffff;
+                        margin-bottom: 5px;
+                    }
+                    
+                    .train-subtitle {
+                        font-size: 14px;
+                        color: #8b949e;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .train-route {
+                        font-size: 16px;
+                        color: #00ff99;
+                        font-weight: 500;
+                        margin-bottom: 15px;
+                    }
+                    
+                    .train-progress {
+                        background: #161b22;
+                        padding: 15px;
+                        border-radius: 8px;
+                        border: 1px solid #30363d;
+                        margin-top: 10px;
+                    }
+                    
+                    .train-progress span {
+                        font-size: 14px;
+                        color: #8b949e;
+                        display: block;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .progress-bar-horizontal {
+                        width: 100%;
+                        height: 8px;
+                        background: #333;
+                        border-radius: 4px;
+                        overflow: hidden;
+                    }
+                    
+                    .progress-fill-horizontal {
+                        height: 100%;
+                        background: linear-gradient(90deg, #00ff99, #00ccff);
+                        transition: width 0.5s ease;
+                    }
+                    
+                    .tabs {
+                        display: flex;
+                        gap: 10px;
+                        margin-bottom: 20px;
+                        border-bottom: 1px solid #30363d;
+                        padding-bottom: 10px;
+                    }
+                    
+                    .tab-btn {
+                        padding: 8px 20px;
+                        background: transparent;
+                        border: none;
+                        border-radius: 5px;
+                        color: #8b949e;
+                        font-size: 13px;
+                        cursor: pointer;
+                    }
+                    
+                    .tab-btn.active {
+                        background: #00cc66;
+                        color: #000;
+                    }
+                    
+                    .tab-content {
+                        background: #161b22;
+                        border-radius: 10px;
+                        padding: 25px;
+                    }
+                    
+                    .train-info-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                        gap: 20px;
+                        margin-bottom: 30px;
+                    }
+                    
+                    .train-info-item {
+                        background: #21262d;
+                        padding: 15px;
+                        border-radius: 8px;
+                        border: 1px solid #30363d;
+                    }
+                    
+                    .train-info-item .info-label {
+                        font-size: 12px;
+                        color: #8b949e;
+                        margin-bottom: 8px;
+                    }
+                    
+                    .train-info-item .info-value {
+                        font-size: 16px;
+                        font-weight: 600;
+                        color: #ffffff;
+                    }
+                    
+                    .facilities-section h4 {
+                        font-size: 16px;
+                        color: #c9d1d9;
+                        margin-bottom: 15px;
+                        padding-bottom: 10px;
+                        border-bottom: 1px solid #30363d;
+                    }
+                    
+                    .facilities-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                        gap: 10px;
+                    }
+                    
+                    .facility-item {
+                        background: #21262d;
+                        padding: 10px 15px;
+                        border-radius: 6px;
+                        font-size: 13px;
+                        color: #ffffff;
+                        text-align: center;
+                        border: 1px solid #30363d;
+                    }
+                    
+                    .schedule-table {
+                        overflow-x: auto;
+                        max-height: 400px;
+                        overflow-y: auto;
+                    }
+                    
+                    .schedule-table table {
+                        width: 100%;
+                        border-collapse: collapse;
+                    }
+                    
+                    .schedule-table th {
+                        background: #21262d;
+                        padding: 12px 15px;
+                        text-align: left;
+                        font-size: 12px;
+                        color: #8b949e;
+                        border-bottom: 2px solid #30363d;
+                        position: sticky;
+                        top: 0;
+                    }
+                    
+                    .schedule-table td {
+                        padding: 12px 15px;
+                        border-bottom: 1px solid #30363d;
+                        font-size: 13px;
+                        color: #ffffff;
+                    }
+                    
+                    .schedule-table tr.current-station {
+                        background: rgba(255, 204, 0, 0.1);
+                        border-left: 3px solid #ffcc00;
+                    }
+                    
+                    .schedule-table tr:hover {
+                        background: #21262d;
+                    }
+                    
+                    .stats-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                        gap: 20px;
+                        margin-bottom: 30px;
+                    }
+                    
+                    .stat-card {
+                        background: #21262d;
+                        padding: 20px;
+                        border-radius: 10px;
+                        text-align: center;
+                        border: 1px solid #30363d;
+                    }
+                    
+                    .stat-icon {
+                        font-size: 24px;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .stat-value {
+                        font-size: 20px;
+                        font-weight: bold;
+                        color: #00ff99;
+                        margin-bottom: 5px;
+                    }
+                    
+                    .stat-label {
+                        font-size: 12px;
+                        color: #8b949e;
+                    }
+                    
+                    .route-info h4 {
+                        font-size: 16px;
+                        color: #c9d1d9;
+                        margin-bottom: 15px;
+                        padding-bottom: 10px;
+                        border-bottom: 1px solid #30363d;
+                    }
+                    
+                    .route-stats {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 10px;
+                    }
+                    
+                    .route-stat {
+                        display: flex;
+                        justify-content: space-between;
+                        padding: 10px 0;
+                        border-bottom: 1px solid #30363d;
+                    }
+                    
+                    .route-stat:last-child {
+                        border-bottom: none;
+                    }
+                    
+                    .route-stat span {
+                        font-size: 14px;
+                        color: #8b949e;
+                    }
+                    
+                    .route-stat strong {
+                        font-size: 14px;
+                        color: #ffffff;
+                    }
+                    
+                    .facilities-details {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 30px;
+                    }
+                    
+                    .facilities-grid-large {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                        gap: 15px;
+                    }
+                    
+                    .facility-card {
+                        background: #21262d;
+                        padding: 20px;
+                        border-radius: 10px;
+                        text-align: center;
+                        border: 1px solid #30363d;
+                        transition: transform 0.2s;
+                    }
+                    
+                    .facility-card:hover {
+                        transform: translateY(-5px);
+                        border-color: #00ff99;
+                    }
+                    
+                    .facility-icon {
+                        font-size: 24px;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .facility-name {
+                        font-size: 14px;
+                        color: #ffffff;
+                        font-weight: 500;
+                    }
+                    
+                    .train-summary {
+                        background: #21262d;
+                        padding: 20px;
+                        border-radius: 10px;
+                        border: 1px solid #30363d;
+                    }
+                    
+                    .train-summary h4 {
+                        font-size: 16px;
+                        color: #c9d1d9;
+                        margin-bottom: 15px;
+                        padding-bottom: 10px;
+                        border-bottom: 1px solid #30363d;
+                    }
+                    
+                    .train-summary p {
+                        font-size: 14px;
+                        color: #8b949e;
+                        line-height: 1.6;
+                        margin-bottom: 10px;
+                    }
+                    
+                    /* Welcome Screen */
+                    .welcome-screen {
+                        text-align: center;
+                        padding: 40px;
+                        flex: 1;
+                        overflow-y: auto;
+                    }
+                    
+                    .welcome-icon {
+                        font-size: 64px;
+                        margin-bottom: 20px;
+                    }
+                    
+                    .welcome-screen h1 {
+                        font-size: 32px;
+                        margin-bottom: 10px;
+                        font-weight: bold;
+                    }
+                    
+                    .welcome-subtitle {
+                        font-size: 18px;
+                        opacity: 0.7;
+                        margin-bottom: 40px;
+                        color: #8b949e;
+                    }
+                    
+                    .welcome-stats {
+                        display: flex;
+                        justify-content: center;
+                        flex-wrap: wrap;
+                        gap: 30px;
+                        margin-bottom: 40px;
+                    }
+                    
+                    .stat-box {
+                        background: #161b22;
+                        padding: 20px;
+                        border-radius: 10px;
+                        min-width: 120px;
+                        border: 1px solid #30363d;
+                    }
+                    
+                    .stat-number {
+                        font-size: 28px;
+                        font-weight: bold;
+                        color: #00ff99;
+                        margin-bottom: 5px;
+                    }
+                    
+                    .stat-label {
+                        font-size: 12px;
+                        color: #8b949e;
+                    }
+                    
+                    .welcome-info {
+                        max-width: 600px;
+                        margin: 0 auto;
+                    }
+                    
+                    .info-box {
+                        padding: 30px;
+                        background: #161b22;
+                        border-radius: 15px;
+                        border: 1px solid #30363d;
+                    }
+                    
+                    .info-title {
+                        color: #00cc66;
+                        font-size: 18px;
+                        margin-bottom: 25px;
+                        font-weight: 600;
+                    }
+                    
+                    .features-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                        gap: 15px;
+                        margin-bottom: 30px;
+                    }
+                    
+                    .feature-item {
+                        background: #21262d;
+                        padding: 15px;
+                        border-radius: 8px;
+                        text-align: center;
+                        border: 1px solid #30363d;
+                    }
+                    
+                    .feature-icon {
+                        font-size: 20px;
+                        margin-bottom: 8px;
+                    }
+                    
+                    .feature-text {
+                        font-size: 12px;
+                        color: #ffffff;
+                    }
+                    
+                    .train-types {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 10px;
+                        justify-content: center;
+                        margin: 25px 0;
+                    }
+                    
+                    .type-tag {
+                        background: rgba(0, 255, 153, 0.1);
+                        color: #00ff99;
+                        padding: 6px 12px;
+                        border-radius: 15px;
+                        font-size: 11px;
+                        border: 1px solid #00ff99;
+                    }
+                    
+                    .info-note {
+                        margin-top: 20px;
+                        font-size: 14px;
+                        color: #00ff99;
+                        font-style: italic;
+                    }
+                    
+                    .info-tip {
+                        font-size: 12px;
+                        color: #8b949e;
+                        margin-top: 15px;
+                        padding: 10px;
+                        background: rgba(0, 255, 153, 0.05);
+                        border-radius: 8px;
+                        border-left: 3px solid #00ff99;
+                    }
+                `;
+            }
+        }
+
+        // Initialize the app when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new TrainTracker();
+        });
+    </script>
+</body>
+</html>
